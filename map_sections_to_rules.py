@@ -29,7 +29,7 @@ client = AzureOpenAI(
 )
 
 
-sections_path = Path("output/clean_sections.md")
+sections_path = Path("output/clean_sections-1.md")
 rules_path = Path("output/clean_rules.md")
 
 if not sections_path.exists() or not rules_path.exists():
@@ -42,19 +42,47 @@ rules_text = rules_path.read_text(encoding="utf-8")
 SYSTEM_PROMPT = """
 You are an expert legal mapping assistant for the government Act and its Rules.
 
-Your task is to map SECTIONS of the Act to RULES that implement, operationalize, or expand them.
+Your task is to map ONLY RELEVANT SECTIONS of the Act to RULES that implement,
+operationalize, or expand them for ORGANIZATIONAL COMPLIANCE purposes.
+
+IMPORTANT SCOPE LIMITATION (CRITICAL):
+Some Sections of the Act relate exclusively to Government bodies such as:
+- Central Government
+- State Government
+- Central Boards
+- State Boards
+- Regulatory Authorities acting purely as Government bodies
+
+These provisions are NOT APPLICABLE for organizational compliance capture.
+
+MANDATORY FILTERING INSTRUCTION:
+Before attempting any mapping:
+- FIRST examine each Section carefully.
+- If a Section primarily applies to Central Government, State Government,
+  Central Boards, State Boards, or Government authorities acting in an
+  administrative or regulatory capacity,
+  you MUST SKIP that Section entirely.
+- Do NOT map skipped Sections to any Rules.
+- Do NOT mention skipped Sections in the output.
+
+ONLY proceed with Sections that impose obligations, duties, prohibitions,
+rights, compliance requirements, or procedures applicable to organizations,
+entities, establishments, or regulated persons.
 
 CRITICAL INSTRUCTION (DO NOT IGNORE):
-For EACH Section, you MUST evaluate it against ALL Rules (from Rule 3 onward).
+For EACH INCLUDED Section, you MUST evaluate it against ALL Rules
+(from Rule 3 onward).
 Do NOT stop after finding one matching rule.
 Do NOT assume only one rule applies.
 
 Understanding:
-- SECTIONS define broad legal powers, duties, prohibitions, rights and responsibilities (WHAT the law mandates).
-- RULES define detailed procedures, standards, formats, compliance steps and enforcement mechanisms (HOW the law is carried out).
+- SECTIONS define legal obligations, duties, prohibitions, rights and
+  responsibilities applicable to organizations (WHAT the law mandates).
+- RULES define detailed procedures, standards, formats, compliance steps
+  and enforcement mechanisms (HOW the law is carried out).
 
 Mapping procedure (MANDATORY):
-1. Take ONE Section at a time.
+1. Take ONE applicable Section at a time.
 2. Compare that Section with EVERY Rule starting from Rule 3 up to the last Rule.
 3. For each Rule, decide whether it:
    - directly implements the Section, OR
@@ -67,7 +95,8 @@ Mandatory constraints:
 - Do NOT attempt to map Rule 1 or Rule 2.
 - Start mapping from Section 3 onward and Rule 3 onward.
 - One Section may map to MULTIPLE Rules.
-- If a Section has no matching rules after checking ALL rules, explicitly say so.
+- If an applicable Section has no matching rules after checking ALL rules,
+  explicitly say so.
 
 Output format (STRICT):
 Section <number>: <short section title>
@@ -80,8 +109,10 @@ Matched Rules:
 Do NOT:
 - Summarize the Act or Rules
 - Invent relationships
+- Map Government-only Sections
 - Skip rule numbers
-- Explain your reasoning outside the format
+- Explain reasoning outside the format
+
 
 """
 
@@ -92,8 +123,7 @@ Do NOT:
 
 response = client.chat.completions.create(
     model=AZ_DEPLOY,
-    temperature=0.0,
-    max_tokens=8000,
+    max_completion_tokens=8000,
     messages=[
         {"role": "system", "content": SYSTEM_PROMPT},
         {
@@ -117,7 +147,7 @@ mapping_output = response.choices[0].message.content.strip()
 # =========================
 
 Path("output").mkdir(exist_ok=True)
-output_path = Path("output/section_rule_mapping.md")
+output_path = Path("output/section_rule_mapping(2).md")
 output_path.write_text(mapping_output, encoding="utf-8")
 
 print("✅ Section–Rule mapping completed")
