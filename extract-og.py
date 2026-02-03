@@ -1,7 +1,10 @@
+# =========================
+# COMMON IMPORTS & SETUP
+# =========================
+
 from docling.document_converter import DocumentConverter
 from pathlib import Path
 import os
-import re
 from dotenv import load_dotenv
 
 try:
@@ -10,9 +13,9 @@ except Exception:
     AzureOpenAI = None
 
 
-# ==============================
+# =========================
 # AZURE OPENAI CONFIG
-# ==============================
+# =========================
 
 load_dotenv()
 
@@ -33,23 +36,9 @@ client = AzureOpenAI(
 Path("output").mkdir(exist_ok=True)
 
 
-# ==============================
-# HELPERS
-# ==============================
-
-def split_into_sections(markdown_text: str):
-    """
-    Split ONLY real Act sections like:
-    1. Short title
-    2. Definitions
-    """
-    pattern = r'(?=^\d+\.\s+[A-Z][^\n]{3,})'
-    sections = re.split(pattern, markdown_text, flags=re.MULTILINE)
-    return [s.strip() for s in sections if s.strip()]
-
-# ==============================
+# =========================
 # SECTION CLEANUP PIPELINE
-# ==============================
+# =========================
 
 print("🔹 Processing SECTIONS (Act)")
 
@@ -64,56 +53,54 @@ SECTIONS_PROMPT = """
 You are cleaning a legal document extracted from a PDF.
 
 Your task:
-- REMOVE the index / arrangement of sections completely.
-- The index typically appears as a numbered list without actual content.
+follow the below instructions strictly
+- REMOVE the index / arrangement of sections part completely.
+- The index typically appears as a list like:
+  1.
+  2.
+  3.
+  4.
+  5.
+  ...
+  without actual section content.
 - REMOVE any table of contents or arrangement headings.
+- REMOVE any introductory or explanatory text that is not part of the actual legal content.
+- REMOVE any footnotes or references that do not belong to the main sections.
+- REMOVE chapter titles or headings that are not part of the actual sections.
+- REMOVE footers which start with Subs. or Ins. or has (w.e.f.
 
-START the document from the ACTUAL legal content such as:
+START the document from the ACTUAL content, such as:
 - "1. Short title, extent and commencement"
 - "2. Definitions"
+- "3. ..."
 
 Keep:
 - All real sections
 - All clauses and sub-clauses
-- All legal text after Section 1 begins
+- All legal text after the real Section 1 begins
 
 Do NOT:
 - Add new content
 - Invent missing sections
-- Change section numbering
+- Change numbering
 
 Output:
 - Clean Markdown only
 - No explanations
+- No headings like "Cleaned Output"
 """
 
-sections = split_into_sections(sections_markdown)
-print(f"📄 Total sections detected: {len(sections)}")
+sections_response = client.chat.completions.create(
+    model=AZ_DEPLOY,
+    temperature=0.0,
+    max_tokens=8000,
+    messages=[
+        {"role": "system", "content": SECTIONS_PROMPT},
+        {"role": "user", "content": sections_markdown},
+    ],
+)
 
-BATCH_SIZE = 10
-cleaned_section_batches = []
-
-for i in range(0, len(sections), BATCH_SIZE):
-    batch = sections[i:i + BATCH_SIZE]
-    batch_text = "\n\n".join(batch)
-
-    print(f"🧠 Cleaning sections {i+1} to {i + len(batch)}")
-
-    response = client.chat.completions.create(
-        model=AZ_DEPLOY,
-        temperature=0.0,
-        max_tokens=200,
-        messages=[
-            {"role": "system", "content": SECTIONS_PROMPT},
-            {"role": "user", "content": batch_text},
-        ],
-    )
-
-    cleaned_section_batches.append(
-        response.choices[0].message.content.strip()
-    )
-
-clean_sections = "\n\n".join(cleaned_section_batches)
+clean_sections = sections_response.choices[0].message.content.strip()
 
 sections_out = Path("output/clean_sections.md")
 sections_out.write_text(clean_sections, encoding="utf-8")
@@ -121,9 +108,9 @@ sections_out.write_text(clean_sections, encoding="utf-8")
 print(f"✅ Sections saved to {sections_out}")
 
 
-# ==============================
+# =========================
 # RULES CLEANUP PIPELINE
-# ==============================
+# =========================
 
 print("🔹 Processing RULES")
 
@@ -135,31 +122,35 @@ result = converter.convert(
 rules_markdown = result.document.export_to_markdown()
 
 RULES_PROMPT = """
-You are cleaning a legal RULES document extracted from a PDF.
+You are cleaning a legal RULES document which is extracted from a PDF.
 
 Your task:
 - KEEP only the actual RULES.
-- Rules are numbered as: 1, 2, 3, ...
-
-REMOVE:
-- Chapter numbers (1.1, 1.2, etc.)
-- Chapter titles
-- Index / arrangement sections
+- Rules are numbered as: 1, 2, 3, 4, ...
+- REMOVE all chapter numbering or sub-numbering such as:
+  1.1, 1.2, 1.3, 1.4, etc.
+- REMOVE chapter headings, arrangement of chapters, and indexes.
 
 KEEP:
-- Rule numbers
+- Rule numbers (1, 2, 3, ...)
 - Rule titles
-- Sub-rules like (1), (2), (a), (b)
-- Explanations within rules
+- Sub-rules like (1), (2), (a), (b), etc. INSIDE a rule
+- Explanations attached to rules
+
+REMOVE:
+- Chapter numbers
+- Chapter titles
+- Any numbering that is not a rule number
 
 Do NOT:
 - Add new content
 - Merge or split rules
-- Change numbering
+- Change rule numbering
 - Explain your actions
 
 Output:
 - Clean Markdown only
+- Only the Rules content
 """
 
 rules_response = client.chat.completions.create(
@@ -178,5 +169,6 @@ rules_out = Path("output/clean_rules.md")
 rules_out.write_text(clean_rules, encoding="utf-8")
 
 print(f"✅ Rules saved to {rules_out}")
+
 
 print("🎉 Sections and Rules processing completed successfully")
