@@ -16,10 +16,10 @@ load_dotenv()
 
 AZ_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZ_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZ_DEPLOY = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+AZ_MODEL = os.getenv("MAPPING_AZURE_OPENAI_MODEL")
 AZ_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
 
-if not (AZ_ENDPOINT and AZ_KEY and AZ_DEPLOY and AzureOpenAI):
+if not (AZ_ENDPOINT and AZ_KEY and AZ_MODEL and AzureOpenAI):
     raise RuntimeError("Azure OpenAI configuration missing")
 
 client = AzureOpenAI(
@@ -53,17 +53,36 @@ You are an expert legal mapping assistant for the government Act and its Rules.
 Your task is to map ONLY RELEVANT SECTIONS of the Act to RULES that implement,
 operationalize, or expand them for ORGANIZATIONAL COMPLIANCE purposes.
 
+CRITICAL COMPLIANCE FILTER:
+Compliances with respect to Government Bodies such as the Central or State Board
+are not relevant for compliance capture.
+
+Accordingly:
+- Provisions meant only for Government bodies (Central Board, State Board,
+  authorities, regulators, government departments) must NOT be considered.
+- Such provisions should be ignored or excluded from the output.
+
+Only provisions applicable to:
+- non-government entities
+- regulated entities
+- companies
+- occupiers
+- industries
+- establishments
+- individuals
+should be considered for mapping.
+
 CRITICAL INSTRUCTION (DO NOT IGNORE):
 For EACH INCLUDED Section, you MUST evaluate it against ALL Rules
 (from Rule 3 onward).
 Do NOT stop after finding one matching rule.
 Do NOT assume only one rule applies.
 
-Understanding:
-- SECTIONS define legal obligations, duties, prohibitions, rights and
-  responsibilities applicable to organizations (WHAT the law mandates).
-- RULES define detailed procedures, standards, formats, compliance steps
-  and enforcement mechanisms (HOW the law is carried out).
+COMPLIANCE UNDERSTANDING:
+For each included section, you must identify:
+- What the Act requires (obligation, prohibition, or responsibility).
+- How the Rules explain the way to comply
+  (procedure, steps, process, documentation, timelines).
 
 TEXT EXTRACTION RULE (MANDATORY FOR BOTH SECTIONS AND RULES):
 - section_text must be copied VERBATIM from the input.
@@ -90,21 +109,27 @@ If the section or rule contains:
 they must appear exactly in the output.
 
 Mapping procedure (MANDATORY):
-1. Take ONE applicable Section at a time.
-2. Compare that Section with EVERY Rule starting from Rule 3 up to the last Rule.
-3. For each Rule, decide whether it:
-   - directly implements the Section, OR
-   - operationalizes it through procedure, OR
-   - expands it through compliance or enforcement.
-4. Collect ALL matching Rules for that Section.
+1. Consider ONLY sections that impose obligations, prohibitions,
+   responsibilities, or compliance requirements on non-government entities.
+2. Ignore sections that deal exclusively with:
+   - constitution of boards
+   - powers of government authorities
+   - administrative structure of government bodies
+3. For each included section:
+   a. Compare it with EVERY Rule starting from Rule 3.
+   b. Identify rules that:
+      - directly implement the section, OR
+      - operationalize it through procedure, OR
+      - expand it through compliance or enforcement.
+4. Collect ALL matching rules for that section.
 
 Mandatory constraints:
 - Do NOT attempt to map Section 1 or Section 2.
 - Do NOT attempt to map Rule 1 or Rule 2.
 - Start mapping from Section 3 onward and Rule 3 onward.
 - One Section may map to MULTIPLE Rules.
-- If an applicable Section has no matching rules after checking ALL rules,
-  return an empty matched_rules array.
+- If a relevant compliance section has no matching rules,
+  include the section with mentions matched_rules as an empty array.
 
 OUTPUT FORMAT (STRICT JSON ONLY — NO TEXT):
 
@@ -132,14 +157,11 @@ Do not include explanations.
 Do not include markdown.
 Do not include extra keys.
 """
-    
 
-# =========================
-# Static Names
-# =========================
+
 
 ACT_NAME = "Water (Prevention and Control of Pollution) Act, 1974"
-RULE_NAME = "Water Rules, 1975"
+RULE_NAME = "Maharashtra Water (Prevention and Control of Pollution) Rules,1983-1-13.pdf"
 
 
 # =========================
@@ -147,8 +169,8 @@ RULE_NAME = "Water Rules, 1975"
 # =========================
 
 response = client.chat.completions.create(
-    model=AZ_DEPLOY,
-    max_completion_tokens=8000,
+    model=AZ_MODEL,
+    max_completion_tokens=40000,
     messages=[
         {"role": "system", "content": SYSTEM_PROMPT},
         {
